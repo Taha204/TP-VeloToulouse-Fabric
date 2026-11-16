@@ -1,0 +1,124 @@
+{
+  "sources": [
+    {
+      "id": "7596b60b-bcb5-46bc-959e-ab4d8df58c65",
+      "name": "SRC_VeloToulouse_API",
+      "type": "CustomEndpoint",
+      "properties": {}
+    }
+  ],
+  "destinations": [
+    {
+      "id": "1025774a-c8f6-448c-b121-d631c18d95ac",
+      "name": "Dest_LH_VeloToulouse",
+      "type": "Lakehouse",
+      "properties": {
+        "workspaceId": "{{ .WorkspaceId }}",
+        "itemId": "{{ .LakehouseId }}",
+        "schema": "dbo",
+        "deltaTable": "station_raw",
+        "inputSerialization": {
+          "type": "Json",
+          "properties": {
+            "encoding": "UTF8"
+          }
+        }
+      },
+      "inputNodes": [
+        {
+          "name": "ES_VeloToulouse-stream"
+        }
+      ],
+      "inputSchemas": [
+        {
+          "name": "ES_VeloToulouse-stream",
+          "schema": {
+            "columns": [
+              {
+                "name": "source",
+                "type": "Nvarchar(max)",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "station_id",
+                "type": "Nvarchar(max)",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "num_bikes_available",
+                "type": "BigInt",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "num_docks_available",
+                "type": "BigInt",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "num_bikes_disabled",
+                "type": "BigInt",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "mechanical_bikes",
+                "type": "BigInt",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "electrical_bikes",
+                "type": "BigInt",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "is_renting",
+                "type": "Nvarchar(max)",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "is_returning",
+                "type": "Nvarchar(max)",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "last_reported",
+                "type": "BigInt",
+                "fields": null,
+                "items": null
+              },
+              {
+                "name": "collected_at",
+                "type": "Nvarchar(max)",
+                "fields": null,
+                "items": null
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "streams": [
+    {
+      "id": "a73b16e2-9047-4f57-a559-ed1a1f6b03a8",
+      "name": "ES_VeloToulouse-stream",
+      "type": "DefaultStream",
+      "properties": {},
+      "inputNodes": [
+        {
+          "name": "SRC_VeloToulouse_API"
+        }
+      ]
+    }
+  ],
+  "operators": [],
+  "compatibilityLevel": "1.1"
+}

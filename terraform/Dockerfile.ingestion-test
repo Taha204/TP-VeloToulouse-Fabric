@@ -1,0 +1,10 @@
+
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir \
+    "requests>=2.31,<3" \
+    "python-dotenv>=1,<2" \
+    "azure-eventhub>=5.12,<6" \
+    "websocket-client>=1.8,<2"
+
+WORKDIR /project

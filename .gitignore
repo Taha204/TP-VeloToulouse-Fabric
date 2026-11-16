@@ -30,3 +30,10 @@ logs/
 *.tfvars.json
 crash.log
 crash.*.log
+
+# Secrets locaux Terraform / Fabric
+terraform/.secrets/
+
+# Exports Fabric bruts conserves localement
+terraform/definitions/NB_VeloToulouse_Transform/notebook-content.ipynb
+terraform/definitions/ES_VeloToulouse/eventstreamProperties.json

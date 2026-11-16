@@ -14,5 +14,20 @@ services:
     stdin_open: true
     tty: true
 
+  ingestion-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingestion-test
+
+    working_dir: /project
+
+    volumes:
+      - ../:/project
+
+    env_file:
+      - ./.secrets/eventstream-demo.env
+
+    command: [ "python", "terraform/test_ingestion_once.py" ]
+
 volumes:
   azure_cli_data:

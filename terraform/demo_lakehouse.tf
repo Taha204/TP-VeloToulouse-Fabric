@@ -1,6 +1,6 @@
 
-# Lakehouse de démonstration Terraform
-# Indépendant du pipeline VéloToulouse existant
+# Lakehouse de demonstration avec support des schemas
+# Compatible avec la destination dbo.station_raw
 
 resource "fabric_lakehouse" "iac_demo" {
   workspace_id = data.fabric_workspace.velotoulouse.id
@@ -8,6 +8,10 @@ resource "fabric_lakehouse" "iac_demo" {
   display_name = "LH_VeloToulouse_IaC_Demo"
 
   description = "Lakehouse de demonstration cree et gere avec Terraform pour le projet VeloToulouse."
+
+  configuration = {
+    enable_schemas = true
+  }
 }
 
 output "demo_lakehouse_id" {
