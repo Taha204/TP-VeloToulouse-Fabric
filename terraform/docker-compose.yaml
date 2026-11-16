@@ -1,0 +1,18 @@
+services:
+  iac:
+    image: velotoulouse-iac:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    working_dir: /workspace
+
+    volumes:
+      - ./:/workspace
+      - azure_cli_data:/root/.azure
+
+    stdin_open: true
+    tty: true
+
+volumes:
+  azure_cli_data:

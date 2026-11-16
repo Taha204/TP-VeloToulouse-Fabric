@@ -389,3 +389,79 @@ La courbe historique peut relier visuellement des points éloignés lorsque des 
 [SUPINFO — 5CLOU Exam : 01-my-data-platform](https://github.com/SUPINFO-Organization/5CLOU-Exam/tree/main/01-my-data-platform)
 
 Le sujet demande une plateforme d'ingestion, de traitement et de visualisation de données mises à jour fréquemment. Le groupe a choisi **Microsoft Fabric Eventstream + Python** pour l'ingestion, puis **notebook Fabric + Lakehouse** pour le traitement et **Power BI** pour la visualisation. Cette architecture est l'implémentation choisie par le groupe ; elle n'est pas identique au parcours Azure Data Factory / Synapse mentionné dans le barème du sujet.
+
+
+---
+
+## Infrastructure as Code — Terraform & Docker
+
+Une infrastructure as code (IaC) a été mise en place avec
+Terraform, Docker et Azure CLI pour administrer des ressources
+Microsoft Fabric.
+
+### Architecture IaC
+
+Le dossier `terraform/` contient :
+
+- `Dockerfile` : image avec Terraform et Azure CLI.
+- `docker-compose.yaml` : configuration des conteneurs et volumes.
+- `providers.tf` : provider Microsoft Fabric.
+- `main.tf` : connexion au workspace existant.
+- `inventory.tf` : inventaire des ressources Fabric.
+- `demo_lakehouse.tf` : déploiement d'un Lakehouse de démonstration.
+
+### Ressources Microsoft Fabric
+
+Terraform consulte en lecture seule les ressources existantes :
+
+- Workspace `TP-VeloToulouse`
+- Eventstream `ES_VeloToulouse`
+- Lakehouse `LH_VeloToulouse`
+- Notebook `NB_VeloToulouse_Transform`
+- Rapport Power BI `VeloToulouse_Dashboard`
+- Modèle sémantique `VeloToulouse_Dashboard`
+
+Un Lakehouse supplémentaire, `LH_VeloToulouse_IaC_Demo`,
+a été réellement créé et est géré avec Terraform.
+
+### Exécution
+
+Toutes les commandes s'exécutent depuis la racine du dépôt.
+
+```powershell
+# Construire l'environnement Docker
+docker compose -f ./terraform/docker-compose.yaml build
+
+# Authentification Microsoft
+docker compose -f ./terraform/docker-compose.yaml run --rm iac az login --use-device-code --allow-no-subscriptions
+
+# Initialisation Terraform
+docker compose -f ./terraform/docker-compose.yaml run --rm iac terraform init
+
+# Validation
+docker compose -f ./terraform/docker-compose.yaml run --rm iac terraform validate
+
+# Prévisualisation
+docker compose -f ./terraform/docker-compose.yaml run --rm iac terraform plan
+```
+
+### Résultats
+
+Le déploiement du Lakehouse de démonstration a réussi :
+
+`Apply complete! Resources: 1 added, 0 changed, 0 destroyed.`
+
+Une nouvelle exécution de `terraform plan` a confirmé :
+
+`No changes. Your infrastructure matches the configuration.`
+
+Cela démontre le provisionnement automatisé et l'idempotence.
+
+### Sécurité et limites
+
+- Le fichier `terraform.tfstate` est conservé localement et exclu de Git.
+- Les ressources du pipeline principal ne sont pas gérées par Terraform : elles sont uniquement consultées.
+- Le Lakehouse de démonstration est la seule ressource actuellement provisionnée et gérée par Terraform.
+- Un nouveau clone GitHub ne récupère pas le state local. Il ne faut pas lancer `terraform apply` depuis une autre machine sans reprendre l'état existant ou configurer un backend distant sécurisé.
+- Ne jamais exécuter `terraform destroy` sans vérifier précisément les ressources concernées.
+```

@@ -21,3 +21,12 @@ logs/
 
 # Fichiers temporaires
 .DS_Store
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
