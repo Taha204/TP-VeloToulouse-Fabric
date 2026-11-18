@@ -393,75 +393,174 @@ Le sujet demande une plateforme d'ingestion, de traitement et de visualisation d
 
 ---
 
-## Infrastructure as Code — Terraform & Docker
+## Infrastructure as Code — Terraform, Docker, GitHub Actions et Power BI
 
-Une infrastructure as code (IaC) a été mise en place avec
-Terraform, Docker et Azure CLI pour administrer des ressources
-Microsoft Fabric.
+Cette partie complète le TP avec une **démonstration Infrastructure as Code (IaC)**. L'objectif est de reproduire la chaîne VéloToulouse dans des ressources Microsoft Fabric séparées, d'automatiser une ingestion et de démontrer que le déploiement aboutit à des données consultables dans Power BI.
 
-### Architecture IaC
+**Périmètre :** les ressources principales du groupe (ingestion de Karl, transformations de Taha et rapport Power BI principal) restent **inchangées**. Terraform crée et administre uniquement des **copies de démonstration** suffixées `_IaC_Demo`.
 
-Le dossier `terraform/` contient :
+### Architecture de démonstration
 
-- `Dockerfile` : image avec Terraform et Azure CLI.
-- `docker-compose.yaml` : configuration des conteneurs et volumes.
-- `providers.tf` : provider Microsoft Fabric.
-- `main.tf` : connexion au workspace existant.
-- `inventory.tf` : inventaire des ressources Fabric.
-- `demo_lakehouse.tf` : déploiement d'un Lakehouse de démonstration.
+~~~text
+API Open Data Toulouse Métropole (VéloToulouse)
+                 |
+                 | Python : test_ingestion_once.py
+                 | GitHub Actions : exécution manuelle ou quotidienne
+                 v
+Eventstream Fabric : ES_VeloToulouse_IaC_Demo
+                 |
+                 v
+Lakehouse Fabric : LH_VeloToulouse_IaC_Demo
+  dbo.station_raw
+                 |
+                 | Notebook NB_VeloToulouse_Transform_IaC_Demo
+                 | (exécution planifiée séparément dans Fabric)
+                 v
+  dbo.station_history  +  dbo.station_latest
+                 |
+                 | SQL Analytics Endpoint / DirectQuery
+                 v
+Modèle sémantique : VeloToulouse_Dashboard_IaC_Demo_Model
+                 |
+                 v
+Rapport Power BI : VeloToulouse_Dashboard_IaC_Demo
+~~~
 
-### Ressources Microsoft Fabric
+Il s'agit d'une architecture **quasi temps réel du point de vue des données source**, mais la copie de démonstration est **actualisée périodiquement** : le déclencheur GitHub Actions et celui du notebook n'assurent pas un flux continu de bout en bout.
 
-Terraform consulte en lecture seule les ressources existantes :
+### Ce qui est géré par Terraform
 
-- Workspace `TP-VeloToulouse`
-- Eventstream `ES_VeloToulouse`
-- Lakehouse `LH_VeloToulouse`
-- Notebook `NB_VeloToulouse_Transform`
-- Rapport Power BI `VeloToulouse_Dashboard`
-- Modèle sémantique `VeloToulouse_Dashboard`
+Le provider `microsoft/fabric` (version utilisée pendant le projet : `1.13.0`) déploie **cinq ressources Fabric** :
 
-Un Lakehouse supplémentaire, `LH_VeloToulouse_IaC_Demo`,
-a été réellement créé et est géré avec Terraform.
+| Type Terraform | Ressource créée | Usage |
+|---|---|---|
+| `fabric_lakehouse` | `LH_VeloToulouse_IaC_Demo` | Stockage des données brutes et transformées |
+| `fabric_eventstream` | `ES_VeloToulouse_IaC_Demo` | Réception des événements Python et alimentation de `dbo.station_raw` |
+| `fabric_notebook` | `NB_VeloToulouse_Transform_IaC_Demo` | Transformation, historique et dernier état des stations |
+| `fabric_semantic_model` | `VeloToulouse_Dashboard_IaC_Demo_Model` | Modèle TMDL en DirectQuery vers le Lakehouse Demo |
+| `fabric_report` | `VeloToulouse_Dashboard_IaC_Demo` | Rapport PBIR connecté au nouveau modèle sémantique |
 
-### Exécution
+Le workspace `TP-VeloToulouse` et les cinq ressources **principales** existantes sont référencés au moyen de **data sources Terraform en lecture seule** dans `main.tf` et `inventory.tf`. Terraform ne les remplace pas et ne les détruit pas.
 
-Toutes les commandes s'exécutent depuis la racine du dépôt.
+Les définitions exportées de Fabric sont rendues réutilisables grâce à des modèles `.tmpl` et des tokens Terraform : ID du workspace et du Lakehouse pour le notebook et l'Eventstream, nom du Lakehouse pour les partitions TMDL, ID du modèle sémantique pour le rapport PBIR.
 
-```powershell
-# Construire l'environnement Docker
+### Structure des fichiers IaC
+
+~~~text
+terraform/
+├── Dockerfile                    # Image Azure CLI + Terraform
+├── Dockerfile.ingestion-test     # Environnement Python de test
+├── docker-compose.yaml           # Services iac et ingestion-test
+├── providers.tf
+├── main.tf                       # Workspace existant
+├── inventory.tf                  # Inventaire en lecture seule
+├── demo_lakehouse.tf
+├── demo_eventstream.tf
+├── demo_notebook.tf
+├── demo_semanticmodel.tf
+├── demo_report.tf
+├── test_ingestion_once.py
+├── export_powerbi.py
+├── prepare_powerbi.py
+├── definitions/
+│   ├── ES_VeloToulouse/          # Définition Eventstream
+│   ├── NB_VeloToulouse_Transform/# Notebook avec tokens
+│   └── PowerBI/
+│       ├── SemanticModel/        # TMDL, mesures et partitions
+│       └── Report/               # PBIR, pages, visuels, thème
+└── .secrets/                     # Local : non versionné
+
+.github/workflows/
+└── ingestion_demo.yml            # Exécution GitHub Actions
+~~~
+
+Le code de l'ingestion et celui des transformations restent basés sur les composants développés pour le pipeline principal ; le but n'est pas de réécrire les travaux de Karl ou de Taha.
+
+### Exécuter Terraform dans Docker
+
+**Prérequis :** Docker Desktop, accès au workspace Microsoft Fabric et autorisations de création des ressources concernées. La connexion Azure CLI est conservée dans un volume Docker ; le code et l'état Terraform restent dans le dossier local `terraform/`.
+
+Depuis **la racine du dépôt**, dans PowerShell :
+
+~~~powershell
+# Construire les images
 docker compose -f ./terraform/docker-compose.yaml build
 
-# Authentification Microsoft
+# Se connecter à Microsoft (si nécessaire)
 docker compose -f ./terraform/docker-compose.yaml run --rm iac az login --use-device-code --allow-no-subscriptions
 
-# Initialisation Terraform
+# Préparer et contrôler l'infrastructure
 docker compose -f ./terraform/docker-compose.yaml run --rm iac terraform init
-
-# Validation
+docker compose -f ./terraform/docker-compose.yaml run --rm iac terraform fmt -check
 docker compose -f ./terraform/docker-compose.yaml run --rm iac terraform validate
-
-# Prévisualisation
 docker compose -f ./terraform/docker-compose.yaml run --rm iac terraform plan
-```
+~~~
 
-### Résultats
+Avant un premier déploiement, vérifier les ressources affichées dans le plan, puis seulement :
 
-Le déploiement du Lakehouse de démonstration a réussi :
+~~~powershell
+docker compose -f ./terraform/docker-compose.yaml run --rm iac terraform apply
+~~~
 
-`Apply complete! Resources: 1 added, 0 changed, 0 destroyed.`
+**Ne pas exécuter `terraform apply` depuis un autre clone sans récupérer le même état Terraform.** Le fichier `terraform.tfstate` est actuellement **local** et exclu de Git : un nouveau poste ne sait pas automatiquement que les cinq ressources Demo existent déjà.
 
-Une nouvelle exécution de `terraform plan` a confirmé :
+### Ingestion et automatisation GitHub Actions
 
-`No changes. Your infrastructure matches the configuration.`
+Le script `terraform/test_ingestion_once.py` reprend le traitement de l'API et l'envoi via Azure Event Hubs SDK, mais réalise **une seule collecte**, contrairement au script d'ingestion principal exécuté en boucle.
 
-Cela démontre le provisionnement automatisé et l'idempotence.
+Le service Docker `ingestion-test` lit sa chaîne de connexion depuis `terraform/.secrets/eventstream-demo.env` (variable `EVENTHUB_CONNECTION_STRING`). Ce fichier est **local et ignoré par Git**.
+
+~~~powershell
+# Test complet : toutes les stations, sans boucle permanente
+docker compose -f ./terraform/docker-compose.yaml run --rm -e INGESTION_MAX_STATIONS=0 ingestion-test
+~~~
+
+Le workflow `.github/workflows/ingestion_demo.yml` fournit :
+
+- Un lancement manuel depuis l'onglet **Actions** de GitHub.
+- Un déclenchement automatique quotidien à **07 h 17 UTC** (08 h 17 en France en heure d'hiver, 09 h 17 en heure d'été).
+- Une installation temporaire des dépendances Python et une collecte de toutes les stations.
+- Une étape de diagnostic de la réponse de l'API, utile pendant les tests.
+- L'injection sécurisée du secret GitHub Actions `FABRIC_EVENTHUB_CONNECTION_STRING_DEMO`.
+
+Une tâche planifiée GitHub Actions peut démarrer avec du retard ou échouer si l'API externe est indisponible. Des réponses API contenant temporairement zéro résultat ont effectivement été rencontrées pendant le projet.
+
+### Transformation, historique et Power BI
+
+Le notebook Demo traite les données du Lakehouse Demo, puis :
+
+- alimente `station_history` par **MERGE Delta Lake** sur la clé `(station_id, collected_at)`, afin de limiter les doublons lors des réexécutions ;
+- reconstruit `station_latest` avec l'observation la plus récente de chaque station.
+
+Une **planification quotidienne du notebook a été configurée manuellement dans Fabric**, autour de 10 h 40 (heure de Paris), avec une fin initialement prévue le **20 novembre 2026**. **Cette planification n'est pas gérée par les fichiers Terraform** et devra être prolongée si l'environnement doit fonctionner durablement.
+
+Le modèle sémantique Demo lit `station_latest` et `station_history` par **DirectQuery** via le SQL Analytics Endpoint du Lakehouse Demo. Le rapport PBIR est relié à ce **nouveau modèle**. Les cartes KPI, graphiques, filtres et mesures DAX sont issus du rapport Power BI du groupe.
+
+**Limite de l'orchestration :** GitHub Actions et le planificateur du notebook Fabric fonctionnent séparément. Une exécution du notebook n'est pas conditionnée au succès de l'ingestion du jour.
+
+### Validation effectuée le 18 novembre 2026
+
+| Contrôle | Résultat observé |
+|---|---|
+| Validation de la configuration Terraform | `terraform validate` : configuration valide |
+| Plan Terraform avant ajout du modèle et du rapport | `2 to add, 0 to change, 0 to destroy` |
+| GitHub Actions, ingestion complète réussie | 3 368 enregistrements API, 466 stations distinctes, 466 événements envoyés |
+| `dbo.station_raw` | 937 lignes après les tests d'ingestion |
+| `dbo.station_history` | 937 lignes après transformation |
+| `dbo.station_latest` | 466 stations |
+| Notebook de transformation | Exécution manuelle et exécution planifiée validées |
+| Rapport Power BI Demo | Visuels et quatre KPI affichés avec des données du Lakehouse Demo |
+
+Ces chiffres correspondent **aux relevés consultés pendant les tests** et évolueront après de nouvelles collectes. Le chargement du rapport prouve le fonctionnement de cette chaîne à la date du test ; il ne garantit pas l'absence d'incidents futurs. Un nouveau `terraform plan` permet de vérifier qu'aucune dérive n'est détectée après déploiement.
 
 ### Sécurité et limites
 
-- Le fichier `terraform.tfstate` est conservé localement et exclu de Git.
-- Les ressources du pipeline principal ne sont pas gérées par Terraform : elles sont uniquement consultées.
-- Le Lakehouse de démonstration est la seule ressource actuellement provisionnée et gérée par Terraform.
-- Un nouveau clone GitHub ne récupère pas le state local. Il ne faut pas lancer `terraform apply` depuis une autre machine sans reprendre l'état existant ou configurer un backend distant sécurisé.
-- Ne jamais exécuter `terraform destroy` sans vérifier précisément les ressources concernées.
-```
+- **Ne jamais versionner** les fichiers `.env`, `.secrets/`, les exports bruts de connexion ou `*.tfstate` / `*.tfstate.*`.
+- Le secret Eventstream n'apparaît ni dans le code du workflow ni dans le README ; il est conservé localement ou dans **GitHub Actions Secrets**.
+- Les définitions PBIR/TMDL versionnées ne sont pas des fichiers de données historiques ; elles décrivent le rapport et le modèle.
+- Le **state Terraform est local**, sans backend distant ni verrouillage multi-utilisateur : la reprise sur une autre machine nécessite une procédure explicite.
+- La planification du notebook et les secrets GitHub sont configurés **hors Terraform** : un clonage du dépôt ne suffit pas à les recréer.
+- Le pipeline **principal** n'est pas administré par cet état Terraform.
+- Ne lancer `terraform destroy` qu'après analyse détaillée des conséquences sur les ressources Demo.
+
+**Bilan :** cette partie démontre le provisionnement de cinq ressources Fabric par Terraform, une ingestion automatisable sur GitHub Actions et une exploitation de données réelles jusqu'à un rapport Power BI, sans modifier le fonctionnement du pipeline principal.
