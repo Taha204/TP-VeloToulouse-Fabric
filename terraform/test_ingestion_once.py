@@ -1,6 +1,7 @@
 
 import os
 import sys
+import time
 from pathlib import Path
 
 from azure.eventhub import EventHubProducerClient, TransportType
