@@ -1,4 +1,4 @@
-# TP VéloToulouse — Plateforme de données quasi temps réel avec Microsoft Fabric
+# TP VéloToulouse - Plateforme de données quasi temps réel avec Microsoft Fabric
 
 ## Présentation
 
