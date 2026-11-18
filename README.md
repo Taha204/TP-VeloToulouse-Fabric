@@ -281,6 +281,133 @@ Des événements de test antérieurs (par exemple `TEST001` avec d'autres noms d
 
 Idées de métriques Power BI : vélos disponibles par station, répartition mécaniques/électriques, stations vides ou saturées, évolution des disponibilités par heure et taux d'occupation approximatif. Les séries historiques nécessitent d'abord la mise en place de la partie 2.
 
+## Partie 2 — Traitement et stockage des données avec Python (Taha)
+
+### Objectif et environnement
+
+Cette partie transforme les événements bruts stockés dans le Lakehouse en données nettoyées et exploitables par Power BI. Le traitement est réalisé dans le notebook Fabric **`NB_VeloToulouse_Transform`**, avec **Python, pandas, deltalake et PyArrow**, sans transformations PySpark.
+
+Le pipeline principal utilise trois tables Delta dans **`LH_VeloToulouse`** :
+
+| Table | Rôle |
+|---|---|
+| `dbo.station_raw` | Données brutes reçues depuis Eventstream |
+| `dbo.station_history` | Historique nettoyé des observations successives |
+| `dbo.station_latest` | Dernière observation disponible pour chaque station |
+
+### Lecture des données et authentification
+
+Le notebook lit `station_raw` depuis OneLake avec `DeltaTable(...).to_pandas()`. Les données sont chargées dans un DataFrame pandas pour appliquer les règles de nettoyage.
+
+L'accès au stockage utilise explicitement un jeton fourni par Fabric :
+
+```python
+from deltalake import DeltaTable
+
+storage_options = {
+    "bearer_token": notebookutils.credentials.getToken("storage"),
+    "use_fabric_endpoint": "true",
+}
+
+df = DeltaTable(
+    table_path,
+    storage_options=storage_options,
+).to_pandas()
+```
+
+La variable `table_path` désigne le chemin OneLake de `dbo.station_raw`. Les chemins de `station_history` et `station_latest` sont construits dans le même Lakehouse.
+
+Cette authentification explicite a résolu les erreurs de lecture liées à la recherche d'une identité managée via le service de métadonnées. Elle est également utilisée pour lire et écrire les tables transformées.
+
+### Nettoyage et normalisation
+
+Le DataFrame brut est copié dans `clean`, puis les règles suivantes sont appliquées :
+
+| Élément | Transformation ou contrôle |
+|---|---|
+| `station_id` | Conversion en chaîne et suppression des espaces au début et à la fin |
+| Identifiant absent ou vide | Exclusion du relevé |
+| Station de test `TEST001` | Exclusion du relevé |
+| `collected_at` | Conversion du texte ISO 8601 en date UTC ; exclusion si la conversion échoue |
+| `last_reported` | Conversion de l'horodatage Unix en secondes vers une nouvelle colonne `last_reported_at` en UTC |
+| `last_reported` nul, invalide ou non positif | Date `last_reported_at` manquante ; ce seul critère n'exclut pas le relevé |
+| `num_bikes_available` | Conservation uniquement si la valeur est supérieure ou égale à zéro |
+| `num_docks_available` | Conservation uniquement si la valeur est supérieure ou égale à zéro |
+| Doublons du lot | Conservation d'une seule ligne par couple `station_id` + `collected_at` |
+
+Le champ `last_reported` d'origine est conservé. Les deux dates n'ont pas le même sens : **`collected_at` indique quand notre script a collecté la donnée**, tandis que **`last_reported_at` indique la dernière déclaration de la station selon la source**.
+
+Les valeurs de disponibilité ne sont pas modifiées pour créer artificiellement des changements. Une station peut donc conserver le même nombre de vélos pendant plusieurs collectes.
+
+### Historisation avec un MERGE Delta Lake
+
+Après nettoyage, les données sont converties en table PyArrow. Les colonnes de dates sont converties en précision microseconde UTC avant l'écriture Delta.
+
+Lors de la première exécution, `station_history` est créée si elle n'existe pas. Lors des exécutions suivantes, un **MERGE** compare les données entrantes aux observations déjà stockées avec la clé :
+
+```text
+station_id + collected_at
+```
+
+- Si ce couple n'existe pas encore, le nouveau relevé est inséré.
+- Si ce couple existe déjà, aucune nouvelle ligne n'est ajoutée pour ce relevé.
+- Le MERGE utilisé ne met pas à jour les lignes déjà présentes.
+
+Cette règle rend l'alimentation de l'historique **idempotente** : rejouer les mêmes données n'augmente pas le nombre de lignes.
+
+En revanche, la même station observée à deux dates de collecte différentes produit bien deux lignes historiques, même si sa disponibilité ne change pas. Il s'agit de deux observations successives, utiles pour suivre son état dans le temps.
+
+### Construction du dernier état par station
+
+Le notebook relit l'historique nettoyé, trie les observations de la plus récente à la plus ancienne selon `collected_at`, puis conserve une seule ligne par station :
+
+```python
+history_df = DeltaTable(
+    history_path,
+    storage_options=storage_options,
+).to_pandas()
+
+latest = (
+    history_df
+    .sort_values("collected_at", ascending=False)
+    .drop_duplicates(subset="station_id", keep="first")
+)
+```
+
+Le résultat remplace le contenu de **`station_latest`**. Lors des tests, cette table contenait **466 lignes pour 466 stations distinctes**.
+
+Power BI peut ainsi utiliser `station_latest` pour les indicateurs actuels et `station_history` pour les évolutions temporelles. Le dernier état disponible peut être ancien si la collecte est arrêtée ; il ne garantit pas à lui seul la fraîcheur des données.
+
+### Automatisation du notebook principal
+
+Le notebook **`NB_VeloToulouse_Transform`** est enregistré et planifié dans Fabric **toutes les 5 minutes**.
+
+À chaque exécution, il réalise la lecture des données brutes, le nettoyage, le MERGE de l'historique et la reconstruction du dernier état par station.
+
+La planification du traitement principal a été testée avec succès après correction des accès au stockage. L'avancement de `collected_at` dans `station_latest` a été vérifié pendant que l'ingestion fonctionnait.
+
+Cette planification est distincte de celle du notebook **`_IaC_Demo`**, décrite plus loin.
+
+### Validation réalisée
+
+| Contrôle | Résultat observé |
+|---|---|
+| Lecture et nettoyage d'un jeu de données de test | 35 013 relevés bruts et 35 013 relevés conservés |
+| Nombre de stations distinctes | 466 |
+| Réexécution d'un lot déjà historisé | 0 nouvelle ligne ajoutée lors de la seconde exécution |
+| Unicité du dernier état | Une seule ligne par `station_id` dans `station_latest` |
+| Exécution planifiée du notebook principal | Exécution réussie |
+| Actualisation des données transformées | Progression de `collected_at` constatée lorsque l'ingestion était active |
+
+Les volumes indiqués correspondent à des tests et évoluent avec les nouvelles collectes. Le fait de conserver toutes les lignes du jeu de test signifie qu'aucune ne contrevenait aux règles appliquées ; cela ne constitue pas une garantie de qualité exhaustive.
+
+### Limites du traitement actuel
+
+- La lecture de `station_raw` charge actuellement l'ensemble de la table en mémoire pandas. Le MERGE évite les réinsertions, mais la lecture et le nettoyage ne sont pas encore incrémentaux.
+- Le dernier état est reconstruit en relisant l'historique complet. Une stratégie de lecture incrémentale pourra être envisagée si le volume augmente.
+- Les contrôles appliqués portent sur les identifiants, les dates de collecte et les disponibilités de vélos et de places. Ils ne couvrent pas toutes les incohérences possibles entre les compteurs.
+- La fraîcheur des tables dépend de la collecte amont et du succès des exécutions planifiées.
+
 ## Partie 3 — Visualisation Power BI (réalisée)
 
 ### Objectif et livrable
