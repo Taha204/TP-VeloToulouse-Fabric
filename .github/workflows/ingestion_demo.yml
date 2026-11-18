@@ -37,6 +37,38 @@ jobs:
             "azure-eventhub>=5.12,<6" \
             "websocket-client>=1.8,<2"
 
+            
+      - name: Diagnostiquer l'API Toulouse
+        run: |
+          python - <<'PY'
+          import requests
+
+          url = (
+              "https://data.toulouse-metropole.fr/api/explore/v2.1/"
+              "catalog/datasets/"
+              "velotoulouse-disponibilite-temps-reel/records"
+          )
+
+          response = requests.get(
+              url,
+              params={"limit": 1, "offset": 0},
+              timeout=30,
+          )
+
+          print("HTTP status:", response.status_code)
+          print("Content-Type:", response.headers.get("Content-Type"))
+
+          try:
+              data = response.json()
+              print("total_count:", data.get("total_count"))
+              print("results count:", len(data.get("results", [])))
+              print("response keys:", list(data.keys()))
+          except Exception as exc:
+              print("JSON decoding error:", type(exc).__name__)
+
+          PY
+
+
       - name: Executer une ingestion complete
         env:
           EVENTHUB_CONNECTION_STRING: ${{ secrets.FABRIC_EVENTHUB_CONNECTION_STRING_DEMO }}
