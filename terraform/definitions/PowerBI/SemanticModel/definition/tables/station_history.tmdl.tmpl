@@ -1,0 +1,199 @@
+table station_history
+	lineageTag: 8da0686c-146e-4e64-8ce1-9763a1c8c716
+
+	measure 'Stations par relevé' =
+			
+			DISTINCTCOUNT('station_history'[station_id])
+		formatString: 0
+		lineageTag: 6daed7b0-1f65-4039-a570-3cf62fd2abe0
+
+	measure 'Vélos disponibles historique' =
+			
+			IF(
+			    [Stations par relevé] = 466,
+			    SUM('station_history'[num_bikes_available]),
+			    BLANK()
+			)
+		formatString: 0
+		lineageTag: 51939ab8-8b89-42c9-85dd-a202752d3dd3
+
+	measure 'Vélos historiques test' =
+			
+			VAR NbStations =
+			    DISTINCTCOUNT('station_history'[station_id])
+			
+			VAR NbVelos =
+			    SUM('station_history'[num_bikes_available])
+			
+			RETURN
+			    IF(
+			        HASONEVALUE('station_history'[collected_at])
+			            && NbStations = 466,
+			        NbVelos,
+			        BLANK()
+			    )
+		formatString: 0
+		lineageTag: efc29c13-b75d-4087-b10d-073ad3fb56d1
+
+	measure 'Vélos historiques filtrés' =
+			
+			VAR StationsDuReleve =
+			    CALCULATE(
+			        DISTINCTCOUNT('station_history'[station_id]),
+			        REMOVEFILTERS('station_latest')
+			    )
+			
+			VAR VelosDisponibles =
+			    SUM('station_history'[num_bikes_available])
+			
+			RETURN
+			    IF(
+			        HASONEVALUE('station_history'[collected_at])
+			            && StationsDuReleve = 466,
+			        VelosDisponibles,
+			        BLANK()
+			    )
+		formatString: 0
+		lineageTag: 6abd3810-f634-4107-9f6f-9df5dbcd62ed
+
+	measure 'Dernier relevé actuel' =
+			
+			MAX('station_latest'[collected_at])
+		formatString: General Date
+		lineageTag: 2a3ffbe7-af49-4d9a-809d-859fdbd134ba
+
+	measure 'Dernier relevé historique' =
+			
+			MAX('station_history'[collected_at])
+		formatString: General Date
+		lineageTag: df122675-f892-4c59-92bb-93332d6f81a5
+
+	column source
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 49b44c66-e879-4747-9d70-e923399ea177
+		summarizeBy: none
+		sourceColumn: source
+
+		annotation SummarizationSetBy = Automatic
+
+	column station_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 2afed73e-55e2-4a3d-9f55-845c8c439b01
+		summarizeBy: none
+		sourceColumn: station_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column num_bikes_available
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: c8edf91b-55ab-4f89-b898-9ce5ec98bd4e
+		summarizeBy: sum
+		sourceColumn: num_bikes_available
+
+		annotation SummarizationSetBy = Automatic
+
+	column num_docks_available
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 3e2f4e86-ddd3-4ed6-a087-2f4dbe03b56b
+		summarizeBy: sum
+		sourceColumn: num_docks_available
+
+		annotation SummarizationSetBy = Automatic
+
+	column num_bikes_disabled
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 8dfb9ba8-0c26-44c9-a8fc-20cb8d414922
+		summarizeBy: sum
+		sourceColumn: num_bikes_disabled
+
+		annotation SummarizationSetBy = Automatic
+
+	column mechanical_bikes
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 39849043-cd95-474b-a806-765ece0d0e5c
+		summarizeBy: sum
+		sourceColumn: mechanical_bikes
+
+		annotation SummarizationSetBy = Automatic
+
+	column electrical_bikes
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 83c12431-7dc1-44bf-a8d2-eb2708817567
+		summarizeBy: sum
+		sourceColumn: electrical_bikes
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_renting
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		sourceProviderType: bit
+		lineageTag: 5e60b2b7-9551-43c7-aee7-d2f24316f088
+		summarizeBy: none
+		sourceColumn: is_renting
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_returning
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		sourceProviderType: bit
+		lineageTag: 228b6bf0-f707-47f2-ba87-d486e2e2750f
+		summarizeBy: none
+		sourceColumn: is_returning
+
+		annotation SummarizationSetBy = Automatic
+
+	column last_reported
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 49be1552-1ae2-4090-9169-50a800d77197
+		summarizeBy: sum
+		sourceColumn: last_reported
+
+		annotation SummarizationSetBy = Automatic
+
+	column collected_at
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: bfd928fb-93c9-4b50-b24c-18a0554b4a9c
+		summarizeBy: none
+		sourceColumn: collected_at
+
+		annotation SummarizationSetBy = Automatic
+
+	column last_reported_at
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: fde579ff-0ac2-4200-a786-de2a93282c04
+		summarizeBy: none
+		sourceColumn: last_reported_at
+
+		annotation SummarizationSetBy = Automatic
+
+	partition station_history = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("rlymqhpwi3nuzoh7apsgyfextu-57xgpsyua6vu3gypn6xkaw7peq.datawarehouse.fabric.microsoft.com", "{{ .LakehouseName }}"),
+				    dbo_station_history = Source{[Schema="dbo",Item="station_history"]}[Data]
+				in
+				    dbo_station_history
+
+	annotation PBI_ResultType = Table
+

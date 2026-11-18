@@ -1,0 +1,4 @@
+relationship 07eebd61-0142-0e55-52c1-68d6d823502c
+	fromColumn: station_history.station_id
+	toColumn: station_latest.station_id
+
