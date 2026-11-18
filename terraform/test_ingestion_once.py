@@ -26,7 +26,25 @@ from scripts import ingestion_velotoulouse as ingestion
 def main():
     print("Récupération des données VéloToulouse...")
 
-    records = ingestion.fetch_stations()
+    # Réessayer une collecte complète si l'API renvoie
+    # temporairement un total_count incohérent.
+    for attempt in range(1, 4):
+        try:
+            records = ingestion.fetch_stations()
+            break
+
+        except RuntimeError as exc:
+            if (
+                "L'API ne retourne aucun enregistrement" not in str(exc)
+                or attempt == 3
+            ):
+                raise
+
+            print(
+                f"Réponse API incohérente. "
+                f"Nouvelle tentative {attempt + 1}/3..."
+            )
+            time.sleep(3 * attempt)
     events = ingestion.transform_records(records)
 
     if not events:
@@ -34,8 +52,14 @@ def main():
 
     print(f"Stations disponibles : {len(events)}")
 
-    # Un seul lot limité à 5 stations
-    test_events = events[:5]
+    # 5 stations par défaut
+    # 0 = toutes les stations
+    limit = int(os.getenv("INGESTION_MAX_STATIONS", "5"))
+
+    if limit < 0:
+        raise ValueError("INGESTION_MAX_STATIONS doit être >= 0")
+
+    test_events = events if limit == 0 else events[:limit]
 
     print(f"Envoi de {len(test_events)} stations de test...")
 
